@@ -101,9 +101,9 @@ public class BaokuDownload {
 	@Autowired
 	private RuntimeExceptionDao<BKBook, String> bkbookDao;
 
-	final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, null );
+	final BasicCookieStore bcs = new BasicCookieStore();
+	final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, bcs);
 	//final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
-	BasicCookieStore bcs = new BasicCookieStore();
 	//final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
 
 	public void 处理包库验证码问题(HC hc) throws IOException {
@@ -449,7 +449,7 @@ public class BaokuDownload {
 		}
 		es.shutdown();
 		es.awaitTermination( 1, TimeUnit.HOURS );
-		if (fullySuccess.get() && pages.isEmpty()) {
+		if (fullySuccess.get() && pages2.isEmpty()) {
 			bb.status = 1;
 			bkbookDao.update( bb );
 		}

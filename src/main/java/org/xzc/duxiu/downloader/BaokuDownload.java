@@ -1,16 +1,13 @@
 package org.xzc.duxiu.downloader;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -58,6 +55,7 @@ import com.j256.ormlite.stmt.QueryBuilder;
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration(classes = { AppConfig.class })
 public class BaokuDownload {
+	
 	public static final class Page {
 		public String url;
 		public String name;
@@ -68,19 +66,47 @@ public class BaokuDownload {
 		}
 	}
 
-	public static class HC2 {
-		public HC hc;
-		public boolean ok;
-
-		public HC2(HC hc) {
-			this.hc = hc;
-			this.ok = true;
+	private static final File rootDir = new File( "E:\\下载仓库\\bk" );
+	private static final File finishedRootDir = new File( "E:\\下载仓库\\bk_finished" );
+	private static final File finishedPdfRootDir = new File( "E:\\下载仓库\\bk_pdf" );
+	private static final FileFilter fileFilter = new FileFilter() {
+		public boolean accept(File f) {
+			return f.isFile();
 		}
+	};
 
+	private static final FileFilter dirFilter = new FileFilter() {
+		public boolean accept(File f) {
+			return f.isDirectory();
+		}
+	};
+
+	private static final int batch = 16;
+	private static final int timeout = 120000;
+	
+	private static final int addPages(List<Page> pages, String prefix, int from, int to, int headerIndex) {
+		for (int i = from; i <= to; ++i) {
+			String name;
+			if (prefix.charAt( 0 ) == '0') {
+				name = Integer.toString( i );
+			} else {
+				name = "0_header_" + ( headerIndex++ );
+			}
+			String url = prefix + StringUtils.leftPad( Integer.toString( i ), 6 - prefix.length(), '0' );
+			pages.add( new Page( url, name ) );
+		}
+		return headerIndex;
 	}
 
+	@Autowired
+	private RuntimeExceptionDao<BKBook, String> bkbookDao;
+
+	//final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, null );
+	//final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
+	BasicCookieStore bcs = new BasicCookieStore();
+	final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
+
 	public void 处理包库验证码问题(HC hc) throws IOException {
-		//http://img.sslibrary.com/n/antispiderShowVerify.ac
 		Scanner scanner = new Scanner( System.in );
 		while (true) {
 			CloseableHttpResponse res = hc.asRes( Req.get( "http://img.sslibrary.com/n/processVerifyPng.ac" ) );
@@ -92,19 +118,93 @@ public class BaokuDownload {
 			FileUtils.writeByteArrayToFile( new File( "vcode_0.png" ), data );
 			System.out.println( "请输入验证码" );
 			String yzm = scanner.nextLine();
-			//http://img.sslibrary.com/n/processVerify.ac?ucode=kkpk
 			String content = hc.getAsString( "http://img.sslibrary.com/n/processVerify.ac?ucode=" + yzm );
 			if (!content.contains( "验证码输入有误" )) {
-				//成功
 				break;
 			}
 		}
 	}
 
-	private static final File rootDir = new File( "E:\\下载仓库\\bk" );
-	private static final File finishedRootDir = new File( "E:\\下载仓库\\bk_finished" );
-	private static final File finishedPdfRootDir = new File( "E:\\下载仓库\\bk_pdf" );
+	@Test
+	public void 将可以包库的图书加入数据库() throws Exception {
+		String searchUrl = "http://book.duxiu.com/search?channel=search&gtag=&sw=%E6%97%A5%E8%AF%AD&ecode=utf-8&Field=all&Sort=&adminid=1071&btype=1&seb=0&pid=0&showc=0&fenleiID=&searchtype=1&authid=0&exp=0&expertsw=&sectyear=2012&Pages=";
+		int index = 1;
+		Scanner scanner = new Scanner( System.in );
+		while (true) {
+			System.out.println( index + "页" );
+			String url = searchUrl + index;
+			String content = hc.getAsString( url );
+			Document doc = Jsoup.parse( content, url );
+			Elements es = doc.select( ".book1 img" );
+			boolean find = false;
+			for (Element e : es) {
+				if (e.attr( "src" ).equals( "/images/readAll_bk.jpg" )) {
+					find = true;
+					String imgUrl = e.parents().select( ".book1" ).select( "#b_img img" ).first().absUrl( "src" );
+					FileUtils.writeByteArrayToFile( new File( "vcode_0.png" ), hc.getAsByteArray( imgUrl ) );
+					String bkUrl = e.parent().absUrl( "href" );
+					Element titleElement = e.parent().parent().select( "a" ).first();
+					BKBook bb = new BKBook();
+					bb.dxid = StringUtils.substringBetween( bkUrl, "dxid=", "&" );
+					if (bkbookDao.queryForId( bb.dxid ) != null) {
+						continue;
+					}
+					bb.title = StringUtils.substringBetween( titleElement.text(), "《", "》" );
+					bb.title = bb.title.substring( 1, bb.title.length() - 1 );
 
+					//格式化标题
+					String s = "\\/:*?\"<>|";
+					for (int i = 0; i < s.length(); ++i)
+						bb.title = bb.title.replace( s.charAt( i ), '_' );
+
+					bb.url = titleElement.absUrl( "href" );
+					System.out.println( String.format( "是否要包库下载 %s %s ? (0:否, 1:是)", bb.title, bb.url ) );
+					bb.status = scanner.nextInt() == 1 ? 0 : -2;
+					bkbookDao.create( bb );
+				}
+			}
+			if (!find)
+				break;
+			++index;
+		}
+	}
+	@Test
+	public void 将已经完成的图书转移到指定目录() throws SQLException {
+		QueryBuilder<BKBook, String> qb = bkbookDao.queryBuilder();
+		qb.where().eq( "status", 3 );
+		List<BKBook> list = qb.query();
+
+		Map<String, File> map = new HashMap<String, File>();
+		for (File d : rootDir.listFiles( dirFilter )) {
+			String name = d.getName();
+			String dxid = StringUtils.substringAfterLast( name, "_" );
+			map.put( dxid, d );
+		}
+		for (BKBook bb : list) {
+			File d = map.get( bb.dxid );
+			if (d == null)
+				continue;
+			//System.out.println(
+			//		d.getAbsolutePath() + " -> " + new File( finishedRootDir, d.getName() ).getAbsolutePath() );
+			d.renameTo( new File( finishedRootDir, d.getName() ) );
+		}
+	}
+
+	@Test
+	public void 将已经转成pdf的图书转移到指定目录() throws SQLException {
+		for (File d : finishedRootDir.listFiles( dirFilter )) {
+			//File from = new File( d, "全页照片.pdf" );
+			File to = new File( d, d.getName() + ".pdf" );
+			//if (from.exists()) {
+			//	from.renameTo( to );
+			//}
+			if (to.exists()) {
+				if (!d.renameTo( new File( finishedPdfRootDir, d.getName() ) )) {
+					System.out.println( "移动 " + d.getAbsolutePath() + " 失败, 可能是正在被使用." );
+				}
+			}
+		}
+	}
 	@Test
 	public void 删除无效文件() throws IOException {
 		BaokuService bs = new BaokuService( null );
@@ -135,20 +235,38 @@ public class BaokuDownload {
 			}
 		}
 	}
+	//final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, bcs );
+	@Test
+	public void 下载包库图书() throws Exception {
+		QueryBuilder<BKBook, String> qb = bkbookDao.queryBuilder();
+		qb.where().eq( "status", 0 );
+		List<BKBook> list = qb.query();
 
-	@Autowired
-	private RuntimeExceptionDao<BKBook, String> bkbookDao;
+		BaokuService bs = new BaokuService( hc );
 
-	private static final FileFilter fileFilter = new FileFilter() {
-		public boolean accept(File f) {
-			return f.isFile();
+		int failCount = 0;
+		for (int i = 0; i < list.size(); ++i) {
+			bcs.clear();
+
+			BKBook bb = list.get( i );
+			String baokuUrl = bs.getBaokuUrl( bb );
+			if (baokuUrl == null) {
+				continue;
+			}
+			System.out.println( "开始下载 " + bb );
+			int status = download( hc, bb, baokuUrl, bs, bcs );
+			System.out.println( "status=" + status );
+			if (status == 0) {
+				failCount = 0;
+			} else if (status == 1 || status == -1) {
+				--i;
+				failCount = 0;
+			} else {
+				--i;
+				处理包库验证码问题( hc );
+			}
 		}
-	};
-	private static final FileFilter dirFilter = new FileFilter() {
-		public boolean accept(File f) {
-			return f.isDirectory();
-		}
-	};
+	}
 
 	@Test
 	public void 制作pdf() throws Exception {
@@ -211,140 +329,6 @@ public class BaokuDownload {
 		es.awaitTermination( 1, TimeUnit.HOURS );
 	}
 
-	@Test
-	public void 将已经转成pdf的图书转移到指定目录() throws SQLException {
-		for (File d : finishedRootDir.listFiles( dirFilter )) {
-			//File from = new File( d, "全页照片.pdf" );
-			File to = new File( d, d.getName() + ".pdf" );
-			//if (from.exists()) {
-			//	from.renameTo( to );
-			//}
-			if (to.exists()) {
-				if (!d.renameTo( new File( finishedPdfRootDir, d.getName() ) )) {
-					System.out.println( "移动 " + d.getAbsolutePath() + " 失败, 可能是正在被使用." );
-				}
-			}
-		}
-	}
-
-	@Test
-	public void 将已经完成的图书转移到指定目录() throws SQLException {
-		QueryBuilder<BKBook, String> qb = bkbookDao.queryBuilder();
-		qb.where().eq( "status", 3 );
-		List<BKBook> list = qb.query();
-
-		Map<String, File> map = new HashMap<String, File>();
-		for (File d : rootDir.listFiles( dirFilter )) {
-			String name = d.getName();
-			String dxid = StringUtils.substringAfterLast( name, "_" );
-			map.put( dxid, d );
-		}
-		for (BKBook bb : list) {
-			File d = map.get( bb.dxid );
-			if (d == null)
-				continue;
-			//System.out.println(
-			//		d.getAbsolutePath() + " -> " + new File( finishedRootDir, d.getName() ).getAbsolutePath() );
-			d.renameTo( new File( finishedRootDir, d.getName() ) );
-		}
-	}
-
-	@Test
-	public void 将可以包库的图书加入数据库() throws Exception {
-		String searchUrl = "http://book.duxiu.com/search?channel=search&gtag=&sw=%E6%97%A5%E8%AF%AD&ecode=utf-8&Field=all&Sort=&adminid=1071&btype=1&seb=0&pid=0&showc=0&fenleiID=&searchtype=1&authid=0&exp=0&expertsw=&sectyear=2012&Pages=";
-		int index = 1;
-		//final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, null );
-		final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, null );
-		Scanner scanner = new Scanner( System.in );
-		while (true) {
-			System.out.println( index + "页" );
-			String url = searchUrl + index;
-			String content = hc.getAsString( url );
-			Document doc = Jsoup.parse( content, url );
-			Elements es = doc.select( ".book1 img" );
-			boolean find = false;
-			for (Element e : es) {
-				if (e.attr( "src" ).equals( "/images/readAll_bk.jpg" )) {
-					find = true;
-					String imgUrl = e.parents().select( ".book1" ).select( "#b_img img" ).first().absUrl( "src" );
-					FileUtils.writeByteArrayToFile( new File( "vcode_0.png" ), hc.getAsByteArray( imgUrl ) );
-					String bkUrl = e.parent().absUrl( "href" );
-					Element titleElement = e.parent().parent().select( "a" ).first();
-					BKBook bb = new BKBook();
-					bb.dxid = StringUtils.substringBetween( bkUrl, "dxid=", "&" );
-					if (bkbookDao.queryForId( bb.dxid ) != null) {
-						continue;
-					}
-					bb.title = bb.title.substring( 1, bb.title.length() - 1 );
-					//bb.title = StringUtils.substringBetween( titleElement.text(), "《", "》" );
-
-					//格式化标题
-					String s = "\\/:*?\"<>|";
-					for (int i = 0; i < s.length(); ++i)
-						bb.title = bb.title.replace( s.charAt( i ), '_' );
-
-					bb.url = titleElement.absUrl( "href" );
-					System.out.println( String.format( "是否要包库下载 %s %s ? (0:否, 1:是)", bb.title, bb.url ) );
-					bb.status = scanner.nextInt() == 1 ? 0 : -2;
-					bkbookDao.create( bb );
-				}
-			}
-			if (!find)
-				break;
-			++index;
-		}
-	}
-
-	private static final int batch = 16;
-	private static final int timeout = 120000;
-
-	@Test
-	public void testIP() throws Exception {
-		BasicCookieStore bcs = new BasicCookieStore();
-		final HC hc = HCs.makeHC( timeout, batch, null, 2076, false, bcs );
-		String content = hc.getAsString(
-				"http://book.duxiu.com/bookDetail.jsp?dxNumber=000007872445&d=F8506FF200C620D8FC697C25F65AFBAF&fenlei=080406&sw=%E6%97%A5%E6%9C%AC%E8%AF%AD" );
-		System.out.println( content );
-		String title = Jsoup.parse( content ).select( "title" ).text();
-		System.out.println( title );
-	}
-
-	@Test
-	public void 下载包库图书() throws Exception {
-		QueryBuilder<BKBook, String> qb = bkbookDao.queryBuilder();
-		qb.where().eq( "status", 0 );
-		List<BKBook> list = qb.query();
-
-		BasicCookieStore bcs = new BasicCookieStore();
-		final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
-		//final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, bcs );
-		BaokuService bs = new BaokuService( hc );
-
-		int failCount = 0;
-		for (int i = 0; i < list.size(); ++i) {
-			bcs.clear();
-
-			BKBook bb = list.get( i );
-			System.out.println( bb );
-			String baokuUrl = bs.getBaokuUrl( bb );
-			if (baokuUrl == null) {
-				continue;
-			}
-			System.out.println( "开始下载 " + bb );
-			int status = download( hc, bb, baokuUrl, bs );
-			System.out.println( "status=" + status );
-			if (status == 0) {
-				failCount = 0;
-			} else if (status == 1 || status == -1) {
-				--i;
-				failCount = 0;
-			} else {
-				--i;
-				处理包库验证码问题( hc );
-			}
-		}
-	}
-
 	/**
 	 * 
 	 * @param hc
@@ -355,7 +339,8 @@ public class BaokuDownload {
 	 * 没有任何问题就返回0 曾经出现过验证码问题或下载失败返回1 需要验证码才能继续返回2 其他问题返回-1
 	 * @throws Exception
 	 */
-	public int download(final HC hc, BKBook bb, String bkUrl, final BaokuService bs) throws Exception {
+	public int download(final HC hc, BKBook bb, String bkUrl, final BaokuService bs, final BasicCookieStore bcs)
+			throws Exception {
 		System.out.println( bkUrl );
 		String content = hc.getAsString( bkUrl );
 		if (content.contains( "您要访问的链接已经失效" )) {
@@ -402,9 +387,12 @@ public class BaokuDownload {
 		final AtomicBoolean fullySuccess = new AtomicBoolean( true );
 		final AtomicInteger exceptionCount = new AtomicInteger( 0 );
 		final AtomicBoolean stop = new AtomicBoolean( false );
+		final AtomicInteger successCount=new AtomicInteger( 0 );
 		for (int i = 0; i < batch; ++i) {
+			Thread.sleep( 100 );
 			es.submit( new Runnable() {
 				public void run() {
+					int expCount = 0;
 					while (!stop.get()) {
 						Page p = null;
 						try {
@@ -423,15 +411,14 @@ public class BaokuDownload {
 												: hc.getProxy().getHostName() + " : "
 														+ "我们检测到您的操作可能有异常\r\n请去 http://img.sslibrary.com/n/antispiderShowVerify.ac 解锁" );
 								fullySuccess.set( false );
-								stop.set( true );
-								break;
-								/*
-								if (exceptionCount.incrementAndGet() < 100) {
-									Thread.sleep( 1000 );
-									continue;
+								if (++expCount >= 5) {
+									stop.set( true );
+									break;
 								} else {
-									System.exit( 0 );
-								}*/
+									bcs.clear();
+									pages2.addFirst( p );
+									continue;
+								}
 							}
 							if (bs.isInvalid( data )) {
 								System.out.println( p.name + " 下载无效" );
@@ -446,6 +433,7 @@ public class BaokuDownload {
 								}
 								continue;
 							}
+							successCount.incrementAndGet();
 							FileUtils.writeByteArrayToFile( file, data );
 							System.out.print( p.name + " " );
 						} catch (Exception e) {
@@ -464,21 +452,8 @@ public class BaokuDownload {
 			bkbookDao.update( bb );
 		}
 		System.out.println();
+		System.out.println( "本轮成功 "+successCount.get()+"个" );
 		return stop.get() ? 1 : 0;
-	}
-
-	private static final int addPages(List<Page> pages, String prefix, int from, int to, int headerIndex) {
-		for (int i = from; i <= to; ++i) {
-			String name;
-			if (prefix.charAt( 0 ) == '0') {
-				name = Integer.toString( i );
-			} else {
-				name = "0_header_" + ( headerIndex++ );
-			}
-			String url = prefix + StringUtils.leftPad( Integer.toString( i ), 6 - prefix.length(), '0' );
-			pages.add( new Page( url, name ) );
-		}
-		return headerIndex;
 	}
 
 	public void download2() throws URISyntaxException {
@@ -498,5 +473,16 @@ public class BaokuDownload {
 		HC hc = HCs.makeHC();
 		byte[] data = hc.getAsByteArray( url );
 		System.out.println( data.length );
+	}
+
+	@Test
+	public void testIP() throws Exception {
+		BasicCookieStore bcs = new BasicCookieStore();
+		final HC hc = HCs.makeHC( timeout, batch, null, 2076, false, bcs );
+		String content = hc.getAsString(
+				"http://book.duxiu.com/bookDetail.jsp?dxNumber=000007872445&d=F8506FF200C620D8FC697C25F65AFBAF&fenlei=080406&sw=%E6%97%A5%E6%9C%AC%E8%AF%AD" );
+		System.out.println( content );
+		String title = Jsoup.parse( content ).select( "title" ).text();
+		System.out.println( title );
 	}
 }

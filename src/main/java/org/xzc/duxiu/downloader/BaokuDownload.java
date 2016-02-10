@@ -55,7 +55,7 @@ import com.j256.ormlite.stmt.QueryBuilder;
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration(classes = { AppConfig.class })
 public class BaokuDownload {
-	
+
 	public static final class Page {
 		public String url;
 		public String name;
@@ -83,7 +83,7 @@ public class BaokuDownload {
 
 	private static final int batch = 16;
 	private static final int timeout = 120000;
-	
+
 	private static final int addPages(List<Page> pages, String prefix, int from, int to, int headerIndex) {
 		for (int i = from; i <= to; ++i) {
 			String name;
@@ -101,10 +101,10 @@ public class BaokuDownload {
 	@Autowired
 	private RuntimeExceptionDao<BKBook, String> bkbookDao;
 
-	//final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, null );
+	final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, null );
 	//final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
 	BasicCookieStore bcs = new BasicCookieStore();
-	final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
+	//final HC hc = HCs.makeHC( timeout, batch, "202.195.192.197", 3128, false, bcs );
 
 	public void 处理包库验证码问题(HC hc) throws IOException {
 		Scanner scanner = new Scanner( System.in );
@@ -168,6 +168,7 @@ public class BaokuDownload {
 			++index;
 		}
 	}
+
 	@Test
 	public void 将已经完成的图书转移到指定目录() throws SQLException {
 		QueryBuilder<BKBook, String> qb = bkbookDao.queryBuilder();
@@ -205,6 +206,7 @@ public class BaokuDownload {
 			}
 		}
 	}
+
 	@Test
 	public void 删除无效文件() throws IOException {
 		BaokuService bs = new BaokuService( null );
@@ -235,6 +237,7 @@ public class BaokuDownload {
 			}
 		}
 	}
+
 	//final HC hc = HCs.makeHC( timeout, batch, "202.120.17.158", 2076, false, bcs );
 	@Test
 	public void 下载包库图书() throws Exception {
@@ -253,7 +256,6 @@ public class BaokuDownload {
 			if (baokuUrl == null) {
 				continue;
 			}
-			System.out.println( "开始下载 " + bb );
 			int status = download( hc, bb, baokuUrl, bs, bcs );
 			System.out.println( "status=" + status );
 			if (status == 0) {
@@ -341,7 +343,6 @@ public class BaokuDownload {
 	 */
 	public int download(final HC hc, BKBook bb, String bkUrl, final BaokuService bs, final BasicCookieStore bcs)
 			throws Exception {
-		System.out.println( bkUrl );
 		String content = hc.getAsString( bkUrl );
 		if (content.contains( "您要访问的链接已经失效" )) {
 			System.out.println( "您要访问的链接已经失效" );
@@ -357,6 +358,7 @@ public class BaokuDownload {
 		final String jpgPath = "http://img.sslibrary.com"
 				+ StringUtils.substringBetween( content, "jpgPath: \"", "\"" );
 		String pagesStr = StringUtils.substringBetween( content, "pages = ", ";" );
+		System.out.println( "开始下载" + bb + "\r\n" + pagesStr );
 		Pattern pattern = Pattern.compile( "\\[(\\d+), (\\d+)\\]" );
 		Matcher matcher = pattern.matcher( pagesStr );
 		int index = 0;
@@ -387,7 +389,7 @@ public class BaokuDownload {
 		final AtomicBoolean fullySuccess = new AtomicBoolean( true );
 		final AtomicInteger exceptionCount = new AtomicInteger( 0 );
 		final AtomicBoolean stop = new AtomicBoolean( false );
-		final AtomicInteger successCount=new AtomicInteger( 0 );
+		final AtomicInteger successCount = new AtomicInteger( 0 );
 		for (int i = 0; i < batch; ++i) {
 			Thread.sleep( 100 );
 			es.submit( new Runnable() {
@@ -410,13 +412,13 @@ public class BaokuDownload {
 										proxy == null ? "本机"
 												: hc.getProxy().getHostName() + " : "
 														+ "我们检测到您的操作可能有异常\r\n请去 http://img.sslibrary.com/n/antispiderShowVerify.ac 解锁" );
-								fullySuccess.set( false );
 								if (++expCount >= 5) {
+									fullySuccess.set( false );
 									stop.set( true );
 									break;
 								} else {
-									bcs.clear();
 									pages2.addFirst( p );
+									bcs.clear();
 									continue;
 								}
 							}
@@ -447,13 +449,14 @@ public class BaokuDownload {
 		}
 		es.shutdown();
 		es.awaitTermination( 1, TimeUnit.HOURS );
-		if (fullySuccess.get()) {
+		if (fullySuccess.get() && pages.isEmpty()) {
 			bb.status = 1;
 			bkbookDao.update( bb );
 		}
 		System.out.println();
-		System.out.println( "本轮成功 "+successCount.get()+"个" );
+		System.out.println( "本轮成功 " + successCount.get() + "个" );
 		return stop.get() ? 1 : 0;
+		//return fullySuccess.get() && !stop.get() ? 0 : stop.get() ? 1 : 0;
 	}
 
 	public void download2() throws URISyntaxException {

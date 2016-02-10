@@ -14,7 +14,8 @@ public class BaokuService {
 
 	public String getBaokuUrl(BKBook bb) {
 		String content = hc.getAsString( bb.url );
-		if(content.contains( "我们检测到您的操作可能有异常" ))throw new IllegalStateException("我们检测到您的操作可能有异常 "+bb.url);
+		if (content.contains( "我们检测到您的操作可能有异常" ))
+			throw new IllegalStateException( "我们检测到您的操作可能有异常 " + bb.url );
 		for (Element e : Jsoup.parse( content, bb.url ).select( ".btn a" )) {
 			if (e.text().equals( "包库全文阅读" )) {
 				return e.absUrl( "href" );
@@ -24,14 +25,14 @@ public class BaokuService {
 	}
 
 	public boolean isInvalid(byte[] data) {
-		if (data[0] != (byte)0x89 || data[1] != (byte)0x50 || data[2] != (byte)0x4e || data[3] != (byte)0x47)
+		if (data[0] != (byte) 0x89 || data[1] != (byte) 0x50 || data[2] != (byte) 0x4e || data[3] != (byte) 0x47)
 			return true;
 		return isInvalid2( data );
 	}
 
 	public boolean isInvalid2(byte[] data) {
 		if (data.length == 667 || data.length == 687 || data.length == 3705 || data.length == 3798
-				|| data.length == 17663)
+				|| data.length == 17663 || data.length == 10750)
 			return true;
 		try {
 			return new String( data, "utf-8" ).contains( "500 Internal Server Error" );

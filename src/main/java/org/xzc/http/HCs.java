@@ -1,6 +1,7 @@
 package org.xzc.http;
 
 import java.io.IOException;
+import java.util.Random;
 
 import org.apache.http.HttpException;
 import org.apache.http.HttpHost;
@@ -64,6 +65,8 @@ public class HCs {
 		return makeHC( DEFAULT_TIMEOUT, DEFAULT_BATCH, host, port, proxyUsername, proxyPassword, ignoreCookie, null );
 	}
 
+	private static final Random r = new Random();
+
 	public static HC makeHC(int timeout, int batch, HttpHost proxy, String proxyUsername, String proxyPassword,
 			boolean ignoreCookie, BasicCookieStore bcs) {
 		Builder b = RequestConfig.custom()
@@ -93,9 +96,18 @@ public class HCs {
 							req.addHeader( "User-Agent",
 									"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.87 Safari/537.36 QQBrowser/9.2.5584.400" );
 						}
-						req.addHeader( "X-Client-IP", "1.2.4.8" );
-						req.addHeader( "X-Forwarded-For", "1.2.4.8" );
-						req.addHeader( "X-Real-IP", "1.2.4.8" );
+
+						/*
+						String ip = r.nextInt( 256 ) + "." + r.nextInt( 256 ) + "." + r.nextInt( 256 ) + "."
+								+ r.nextInt( 256 );
+						req.addHeader( "X-Client-IP", ip );
+						req.addHeader( "Client-IP", ip );
+						req.addHeader( "X-Forwarded-For", ip );
+						req.addHeader( "Forwarded-For", ip );
+						req.addHeader( "X-Real-IP", ip );
+						req.addHeader( "Real-IP", ip );
+						req.addHeader( "X-Remote-IP", ip );
+						req.addHeader( "Remote-IP", ip );*/
 					}
 				} )
 				.setConnectionManager( m )

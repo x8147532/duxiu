@@ -176,7 +176,7 @@ public class Step2Worker extends AbstractWorker {
 		}
 	}
 
-	private boolean fan = true;
+	private boolean fan = false;
 
 	@Override
 	protected void init() throws Exception {

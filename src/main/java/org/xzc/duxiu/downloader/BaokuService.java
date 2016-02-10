@@ -1,6 +1,5 @@
 package org.xzc.duxiu.downloader;
 
-import org.apache.http.HttpHost;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 import org.xzc.duxiu.model.BKBook;
@@ -15,6 +14,7 @@ public class BaokuService {
 
 	public String getBaokuUrl(BKBook bb) {
 		String content = hc.getAsString( bb.url );
+		if(content.contains( "我们检测到您的操作可能有异常" ))throw new IllegalStateException("我们检测到您的操作可能有异常 "+bb.url);
 		for (Element e : Jsoup.parse( content, bb.url ).select( ".btn a" )) {
 			if (e.text().equals( "包库全文阅读" )) {
 				return e.absUrl( "href" );

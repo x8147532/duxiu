@@ -1,6 +1,8 @@
 package org.xzc.duxiu.downloader;
 
+import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.xzc.duxiu.model.BKBook;
 import org.xzc.http.HC;
@@ -50,6 +52,17 @@ public class BaokuService {
 		} catch (Exception e) {
 		}
 		return false;
+	}
+
+	public BKBook getBKBook(String url) {
+		String content = hc.getAsString( url );
+		Document document = Jsoup.parse( content );
+		BKBook bb = new BKBook();
+		bb.title = url;
+		bb.dxid = StringUtils.substringBetween( url, "dxNumber=", "&" );
+		bb.title = BaokuDownload.normalize( document.select( "#topsw" ).val() );
+		bb.status = 0;
+		return bb;
 	}
 
 }

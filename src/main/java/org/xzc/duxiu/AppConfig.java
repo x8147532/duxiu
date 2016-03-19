@@ -1,5 +1,6 @@
 package org.xzc.duxiu;
 
+import java.io.File;
 import java.sql.SQLException;
 
 import org.springframework.context.annotation.Bean;

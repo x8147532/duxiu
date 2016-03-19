@@ -38,7 +38,8 @@ public class Step2Worker extends AbstractWorker {
 		super( tag, es, pm );
 		this.bookList = bookList;
 		BasicCookieStore bcs = new BasicCookieStore();
-		this.hc = HCs.makeHC( 30000, 2, "202.120.17.158", 2076, false, bcs );
+		this.hc = HCs.makeHC( 30000, 2, null, 2076, false, bcs );
+		//this.hc = HCs.makeHC( 30000, 2, "202.120.17.158", 2076, false, bcs );
 		//this.hc = HCs.makeHC( 30000, 2, "202.195.192.197", 3128, false, bcs );
 		//this.hc = HCs.makeHC( 30000, 2, null, 2076, false, bcs );
 		this.scanner = new Scanner( System.in );
@@ -113,12 +114,13 @@ public class Step2Worker extends AbstractWorker {
 			}
 		} else if (content.contains( "咨询提交成功" )) {
 			System.out.println( String.format( "%s %d-%d %d 成功", book.title, from, to, book.maxPage ) );
-			if (fan) {
-				book.fcurrentPage = from;
-			} else {
+			//if (fan) {
+			//	book.fcurrentPage = from;
+			//} else {
 				book.currentPage = to;
-			}
-			if (( !fan && book.currentPage == book.maxPage ) || ( fan && book.fcurrentPage == 1 )) {
+			//}
+			//if ((!fan && book.currentPage == book.maxPage ) || ( fan && book.fcurrentPage == 1 )) {
+			if(book.currentPage==book.maxPage){
 				book.status = 2;
 			} else {
 				bookList.addFirst( book );
@@ -138,7 +140,7 @@ public class Step2Worker extends AbstractWorker {
 	private Email email;
 
 	public String[] SITE_NAMES = { null, "深圳文献港", "独秀", "龙岩", "长春网络图书馆", "百链", "法源" };
-	private static final int MAX_MODE = 4;
+	private static final int MAX_MODE =2;
 	public static final int INIT_MODE = MAX_MODE;
 
 	private Req getReq(String chuandiUrl, int mode) {
@@ -176,7 +178,7 @@ public class Step2Worker extends AbstractWorker {
 		}
 	}
 
-	private boolean fan = false;
+	//private boolean fan = false;
 
 	@Override
 	protected void init() throws Exception {
@@ -224,16 +226,16 @@ public class Step2Worker extends AbstractWorker {
 		content = hc.asString( req );
 		this.d = Jsoup.parse( content );
 		int maxPage = 50;
-		if (book.currentPage > 0) {
-			fan = false;
+		//if (book.currentPage > 0) {
+		//	fan = false;
 			from = book.currentPage + 1;
 			to = Math.min( from + Math.min( maxPage, book.maxPage / 5 ) - 1, book.maxPage );
-		} else {
+		/*} else {
 			fan = true;
 			to = book.fcurrentPage - 1;
 			from = to - Math.min( maxPage, book.maxPage / 5 ) + 1;
 			from = Math.max( from, 1 );
-		}
+		}*/
 		map = new HashMap<String, String>();
 		map.put( "fbf.uppages", from + "-" + to );
 		map.put( "fbf.mulutag", "1" );

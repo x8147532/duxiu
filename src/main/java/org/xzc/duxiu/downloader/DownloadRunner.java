@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.xzc.duxiu.AppConfig;
+import org.xzc.duxiu.model.Book;
 import org.xzc.duxiu.model.Page;
 import org.xzc.duxiu.model.ZxUrl;
 import org.xzc.http.HC;
@@ -45,7 +46,7 @@ public class DownloadRunner {
 	public void downloadPdf() throws Exception {
 		//选出状态为0或4的zxurl
 		QueryBuilder<ZxUrl, String> qb = zxUrlDao.queryBuilder();
-		qb.where().eq( "status", 0 ).or().eq( "status",4 );
+		qb.where().eq( "status", 0 ).or().eq( "status", 4 );
 		final LinkedBlockingQueue<ZxUrl> list = new LinkedBlockingQueue<ZxUrl>( qb.query() );
 
 		System.out.println( list.size() + "个" );
@@ -54,10 +55,10 @@ public class DownloadRunner {
 		ExecutorService es = Executors.newFixedThreadPool( batch );
 
 		//准备一些代理
-		final HC hc = HCs.makeHC( 120000, batch, "202.195.192.197", 3128, true );
+		final HC hc = HCs.makeHC( 120000, batch, null, 3128, true );
 		//final HC hc = HCs.makeHC( 120000, batch, "202.120.17.158", 2076, true );
-		//final HC hc = HCs.makeHC( 120000, batch, "119.254.100.50", 110, "70862045@qq.com", "xzc@7086204511", true,null );
-		//final HC hc = HCs.makeHC( 120000, batch, "121.201.14.165", 110, "70862045@qq.com", "xzc@7086204511", true,null );
+		//final HC hc = HCs.makeHC( 120000, batch, "119.254.100.50", 110, "70862045@qq.com", "PASSWORD", true,null );
+		//final HC hc = HCs.makeHC( 120000, batch, "121.201.14.165", 110, "70862045@qq.com", "PASSWORD", true,null );
 		//final HC hc = HCs.makeHC( 120000, batch, "222.35.17.177", 2076, true );
 		//final HC hc = HCs.makeHC( 120000, batch, null, 2076, true );
 		//final HC hc = HCs.makeHC( 120000, batch, "221.163.38.72", 110, true );
@@ -77,7 +78,8 @@ public class DownloadRunner {
 						if (forceRedownload
 								|| ( redownload && zxUrl.status != 0 && zxUrl.status != 1 && ( zxUrl.updateAt == null
 										|| zxUrl.updateAt.getTime() < System.currentTimeMillis()
-												- 120 * 60 * 1000 ) )) {
+												- 120 * 60 * 1000 ) )
+								|| zxUrl.pages == null) {
 							synchronized (lock) {
 								try {
 									zxUrl = initZxUrl( hc, zxUrl.zxUrl );
@@ -155,6 +157,8 @@ public class DownloadRunner {
 
 	@Autowired
 	private RuntimeExceptionDao<ZxUrl, String> zxUrlDao;
+	@Autowired
+	private RuntimeExceptionDao<Book, String> bookDao;
 
 	/**
 	 * 初始化这个zxurl
@@ -195,9 +199,10 @@ public class DownloadRunner {
 	@Test
 	public void 将咨询获得的url导入数据库() throws Exception {
 		final LinkedBlockingQueue<String> urls = new LinkedBlockingQueue<String>(
-				new HashSet<String>(FileUtils.readLines( new File( "zxurls" ) )) );
+				new HashSet<String>( FileUtils.readLines( new File( "zxurls" ) ) ) );
 		int batch = 16;
-		final HC hc = HCs.makeHC( 30000, batch, "202.120.17.158", 2076, true );
+		//final HC hc = HCs.makeHC( 30000, batch, "202.120.17.158", 2076, true );
+		final HC hc = HCs.makeHC( 30000, batch, null, 2076, true );
 		ExecutorService es = Executors.newFixedThreadPool( batch );
 		for (int i = 0; i < batch; ++i) {
 			es.submit( new Callable<Void>() {
@@ -238,6 +243,7 @@ public class DownloadRunner {
 
 	@Test
 	public void 查看缺少() throws Exception {
+		File finishedDir = new File( "E:\\下载仓库\\new_finished" );
 		File dir = rootDir;
 		File[] ds = dir.listFiles( new FileFilter() {
 			public boolean accept(File f) {
@@ -253,6 +259,8 @@ public class DownloadRunner {
 					r.hasHeader = true;
 				} else {
 					String[] ss2 = StringUtils.substringBefore( s, "." ).split( "-" );
+					if (ss2.length != 2)
+						continue;
 					int from = Integer.parseInt( ss2[0] );
 					int to = Integer.parseInt( ss2[1] );
 					r.maxPage = Math.max( r.maxPage, to );
@@ -290,6 +298,15 @@ public class DownloadRunner {
 					last = to;
 				}
 				System.out.println();
+			} else {
+				List<Book> list = bookDao.queryForEq( "title", d.getName() );
+				if (!list.isEmpty()) {
+					Book b = list.get( 0 );
+					if (b.status == 2) {
+						System.out.println( b.title + " 已完成" );
+						d.renameTo( new File( finishedDir,d.getName() ) );
+					}
+				}
 			}
 		}
 	}
